@@ -146,6 +146,152 @@ func TestSync(t *testing.T) {
 				assertFileMissingInDst("orphan.txt"),
 			},
 		},
+		{
+			name: "nested directories copied correctly",
+			setup: func() (string, string, error) {
+				srcDir, err := os.MkdirTemp("", "src")
+				if err != nil {
+					return "", "", err
+				}
+				dstDir, err := os.MkdirTemp("", "dst")
+				if err != nil {
+					return "", "", err
+				}
+
+				// Creating nested directories and files in the source directory
+				nestedDir := filepath.Join(srcDir, "nested", "subnested")
+				err = os.MkdirAll(nestedDir, 0o755)
+				if err != nil {
+					return "", "", err
+				}
+				err = os.WriteFile(filepath.Join(nestedDir, "file.txt"), []byte("nested content"), 0o644)
+				if err != nil {
+					return "", "", err
+				}
+
+				return srcDir, dstDir, nil
+			},
+			deleteMissing: false,
+			checks: []check{
+				hasNoError(),
+				assertFileExistsInDst("nested/subnested/file.txt"),
+			},
+		},
+		{
+			name: "file updates correctly if modified in source",
+			setup: func() (string, string, error) {
+				srcDir, err := os.MkdirTemp("", "src")
+				if err != nil {
+					return "", "", err
+				}
+				dstDir, err := os.MkdirTemp("", "dst")
+				if err != nil {
+					return "", "", err
+				}
+
+				// Creating a file in both source and destination
+				srcFile := filepath.Join(srcDir, "file.txt")
+				dstFile := filepath.Join(dstDir, "file.txt")
+				err = os.WriteFile(srcFile, []byte("new content"), 0o644)
+				if err != nil {
+					return "", "", err
+				}
+				err = os.WriteFile(dstFile, []byte("old content"), 0o644)
+				if err != nil {
+					return "", "", err
+				}
+
+				return srcDir, dstDir, nil
+			},
+			deleteMissing: false,
+			checks: []check{
+				hasNoError(),
+				func(srcDir, dstDir string, err error, t *testing.T) {
+					dstFile := filepath.Join(dstDir, "file.txt")
+					content, err := os.ReadFile(dstFile)
+					if err != nil {
+						t.Errorf("Error reading destination file: %v", err)
+					}
+					if string(content) != "new content" {
+						t.Errorf("Expected destination file to be updated with 'new content', but got '%s'", string(content))
+					}
+				},
+			},
+		},
+		{
+			name: "handles symbolic links gracefully",
+			setup: func() (string, string, error) {
+				srcDir, err := os.MkdirTemp("", "src")
+				if err != nil {
+					return "", "", err
+				}
+				dstDir, err := os.MkdirTemp("", "dst")
+				if err != nil {
+					return "", "", err
+				}
+
+				// Creating a symbolic link in the source directory
+				targetFile := filepath.Join(srcDir, "target.txt")
+				linkFile := filepath.Join(srcDir, "link.txt")
+				err = os.WriteFile(targetFile, []byte("target content"), 0o644)
+				if err != nil {
+					return "", "", err
+				}
+				err = os.Symlink(targetFile, linkFile)
+				if err != nil {
+					return "", "", err
+				}
+
+				return srcDir, dstDir, nil
+			},
+			deleteMissing: false,
+			checks: []check{
+				hasNoError(),
+				func(srcDir, dstDir string, err error, t *testing.T) {
+					linkFile := filepath.Join(dstDir, "link.txt")
+					if fileExists(linkFile) {
+						t.Errorf("Expected symbolic links not to be copied, but link.txt exists in the destination.")
+					}
+				},
+			},
+		},
+		{
+			name: "deletes nested directories in destination if deleteMissing=true",
+			setup: func() (string, string, error) {
+				srcDir, err := os.MkdirTemp("", "src")
+				if err != nil {
+					return "", "", err
+				}
+				dstDir, err := os.MkdirTemp("", "dst")
+				if err != nil {
+					return "", "", err
+				}
+
+				// Creating nested directories and files in the destination directory
+				nestedDir := filepath.Join(dstDir, "nested", "subnested")
+				err = os.MkdirAll(nestedDir, 0o755)
+				if err != nil {
+					return "", "", err
+				}
+				err = os.WriteFile(filepath.Join(nestedDir, "orphan.txt"), []byte("orphan content"), 0o644)
+				if err != nil {
+					return "", "", err
+				}
+
+				return srcDir, dstDir, nil
+			},
+			deleteMissing: true,
+			checks: []check{
+				hasNoError(),
+				assertFileMissingInDst("nested/subnested/orphan.txt"),
+				func(srcDir, dstDir string, err error, t *testing.T) {
+					nestedDir := filepath.Join(dstDir, "nested")
+					if fileExists(nestedDir) {
+						t.Errorf("Expected nested directory to be deleted, but it still exists: %s", nestedDir)
+					}
+				},
+			},
+		},
 	}
 
 	for _, tc := range testcases {

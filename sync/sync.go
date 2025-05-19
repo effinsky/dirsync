@@ -27,6 +27,7 @@ func Dirs(srcDir, dstDir string, deleteMissing bool) error {
 
 	dstFiles := make(map[string]os.FileInfo)
 
+	// Walk through the destination directory to collect all files and directories
 	err := filepath.Walk(dstDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -34,25 +35,24 @@ func Dirs(srcDir, dstDir string, deleteMissing bool) error {
 		if path == dstDir {
 			return nil
 		}
-		if !info.IsDir() {
-			relPath, err := filepath.Rel(dstDir, path)
-			if err != nil {
-				return err
-			}
-			dstFiles[relPath] = info
+		relPath, err := filepath.Rel(dstDir, path)
+		if err != nil {
+			return err
 		}
+		dstFiles[relPath] = info
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("error walking destination folder: %w", err)
 	}
 
+	// Walk through the source directory to synchronize contents
 	err = filepath.WalkDir(srcDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("error walking source folder: %w", err)
 		}
 		if d.Type()&os.ModeSymlink != 0 {
-			return nil
+			return nil // Skip symbolic links
 		}
 
 		relPath, err := filepath.Rel(srcDir, path)
@@ -87,10 +87,17 @@ func Dirs(srcDir, dstDir string, deleteMissing bool) error {
 	}
 
 	if deleteMissing {
-		for relPath := range dstFiles {
+		// Delete files and directories in the destination that are not in the source
+		for relPath, info := range dstFiles {
 			dstPath := filepath.Join(dstDir, relPath)
 			if err := os.RemoveAll(dstPath); err != nil {
 				return fmt.Errorf("failed to delete %s: %w", dstPath, err)
+			}
+			// Ensure directories are deleted properly
+			if info.IsDir() {
+				if err := os.RemoveAll(dstPath); err != nil {
+					return fmt.Errorf("failed to delete directory %s: %w", dstPath, err)
+				}
 			}
 		}
 	}
