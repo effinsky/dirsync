@@ -19,7 +19,10 @@ func main() {
 	flag.Parse()
 
 	if *srcDir == "" || *dstDir == "" {
-		log.Fatal("Source and destination folders are required. Usage: program -src=<source_folder> -dst=<destination_folder> [-delete-missing]")
+		log.Fatal(
+			"Source and destination folders are required. " +
+				"Usage: program -src=<source_folder> -dst=<destination_folder> [-delete-missing]",
+		)
 	}
 	if err := validators.ValidateSrcDir(*srcDir); err != nil {
 		log.Fatalf("Error validating source directory: %v", err)
